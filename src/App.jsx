@@ -1,112 +1,86 @@
+import { useState, useEffect } from 'react';
+import { supabase } from './lib/supabaseClient'; 
 import Sidebar from './components/Sidebar'; 
 import { CodeBlock } from './components/CodeBlock';
+import Login from './components/Login';
+import CommandForm from './components/CommandForm'; // Vamos criar este arquivo
 
 function App() {
-  return (
-    // Container principal com flexbox para alinhar Sidebar e Conteúdo
-    <div className="flex min-h-screen bg-[#0b0b0b]">
-      
-      {/* 1. Barra Lateral Fixa */}
-      <Sidebar />
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // NOVOS ESTADOS: Categoria selecionada e lista de comandos do banco
+  const [category, setCategory] = useState('react'); 
+  const [commands, setCommands] = useState([]);
 
-      {/* 2. Conteúdo Principal com margem à esquerda (ml-16 ou ml-20 conforme o tamanho da sua sidebar) */}
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // FUNÇÃO PARA BUSCAR COMANDOS: Dispara sempre que a categoria muda
+  const fetchCommands = async () => {
+    const { data, error } = await supabase
+      .from('commands')
+      .select('*')
+      .eq('category', category)
+      .order('created_at', { ascending: true });
+    
+    if (!error) setCommands(data);
+  };
+
+  useEffect(() => {
+    if (session) fetchCommands();
+  }, [category, session]);
+
+  if (loading) return <div className="bg-[#0b0b0b] min-h-screen" />;
+  if (!session) return <Login />;
+
+  return (
+    <div className="flex min-h-screen bg-[#0b0b0b]">
+      {/* Passamos setCategory para a Sidebar saber qual ícone foi clicado */}
+      <Sidebar setCategory={setCategory} activeCategory={category} />
+      
       <main className="flex-1 p-6 md:p-12 flex flex-col items-center ml-[70px]">
         <div className="w-full max-w-3xl">
-          
-          {/* Título Principal */}
           <div className="mb-10">
-            <h1 className="text-white text-2xl font-semibold mb-4">
-              Configuração do Projeto <span className="text-purple-400">comandCode</span>
+            <h1 className="text-white text-2xl font-semibold mb-2 capitalize">
+              Comandos <span className="text-purple-400">{category}</span>
             </h1>
-            <p className="text-gray-400">
-              Siga os passos abaixo para configurar o ambiente de desenvolvimento.
-            </p>
+            <p className="text-gray-400 text-sm">Gerencie seus snippets de {category}.</p>
           </div>
 
-          {/* Bloco 1: Vite */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              1. Criar a estrutura do projeto com <code className="bg-[#1e1e1f] px-2 py-0.5 rounded text-purple-300">Vite </code>
-            </h2>
-            <p className='text-xs text-white mb-2'>O Vite já cria uma pasta chamada comand-code para você.</p>
-            <CodeBlock 
-              language="bash" 
-              code={'npm create vite@latest name-project -- --template react'} 
-            />
-          </section>
+          {/* FORMULÁRIO: Para adicionar novos comandos na categoria atual */}
+          <CommandForm activeCategory={category} onCommandAdded={fetchCommands} />
 
-          {/* Bloco 2: CD */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              2. Entrar na <code className="bg-[#1e1e1f] px-2 py-0.5 rounded text-purple-300">pasta do projeto </code>
-            </h2>
-            <p className='text-xs text-white mb-2'>Não pule este passo, caso contrário os próximos comandos darão erro de "executable not found".</p>
-            <CodeBlock 
-              language="bash" 
-              code={'cd comand-code'} 
-            />
-          </section>
-
-          {/* Bloco 3: Git */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              3. Inicializar o Git
-            </h2>
-            <p className='text-xs text-white mb-2'>Vamos preparar o controle de versão antes de instalar as dependências.</p>
-            <CodeBlock 
-              language="bash" 
-              code="git init" 
-            />
-          </section>
-
-          {/* Bloco 4: Install */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              4. Instalar as dependências base do React
-            </h2>
-            <p className='text-xs text-white mb-2'>Isso criará a pasta node_modules. </p>
-            <CodeBlock 
-              language="bash" 
-              code="npm install" 
-            />
-          </section>
-
-          {/* Bloco 5: Tailwind */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              5. Instalar o Tailwind CSS para Vite
-            </h2>
-            <p className='text-xs text-white mb-2'>No seu terminal (dentro da pasta comand-code), rode: </p>
-            <CodeBlock 
-              language="bash" 
-              code="npm install @tailwindcss/vite" 
-            />
-          </section>
+          {/* LISTA DINÂMICA: Renderiza os comandos vindos do Supabase */}
+          <div className="space-y-10 mt-10">
+            {commands.length > 0 ? (
+              commands.map((cmd) => (
+                <section key={cmd.id} className="animate-in fade-in duration-500">
+                  <h2 className="text-gray-200 text-lg mb-4">{cmd.title}</h2>
+                  <CodeBlock language={cmd.language || 'bash'} code={cmd.code} />
+                </section>
+              ))
+            ) : (
+              <p className="text-gray-600 italic">Nenhum comando salvo para {category}.</p>
+            )}
+          </div>
           
-          {/* Bloco 6: Lucide Icons */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              6. Instale o pacote de ícones
-            </h2>
-            <p className='text-xs text-white mb-2'>No terminal, dentro da pasta comand-code, rode: </p>
-            <CodeBlock 
-              language="bash" 
-              code="npm install lucide-react" 
-            />
-          </section>
-
-          {/* Bloco 7: Syntax Highlighter */}
-          <section className="mb-8">
-            <h2 className="text-gray-200 text-lg mb-4">
-              7. Instale a biblioteca de cores
-            </h2>
-            <p className='text-xs text-white mb-2'>Instalando a biblioteca de cores no terminal: </p>
-            <CodeBlock 
-              language="bash" 
-              code="npm install react-syntax-highlighter" 
-            />
-          </section>
-
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="text-gray-600 text-xs hover:text-red-400 transition-colors mt-20"
+          >
+            Sair da conta ({session.user.email})
+          </button>
         </div>
       </main>
     </div>
